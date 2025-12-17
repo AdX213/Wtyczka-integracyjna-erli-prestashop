@@ -4,7 +4,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Api/ErlOrderApi.php';
+require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Api/ErliOrderApi.php';
 require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Mapper/OrderMapper.php';
 require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Repository/OrderLinkRepository.php';
 require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Repository/LogRepository.php';

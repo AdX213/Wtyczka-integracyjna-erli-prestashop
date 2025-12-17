@@ -38,8 +38,8 @@
                     <td>{$p.id_product}</td>
 
                     <td>
-                        {if $p.image}
-                            <img src="{$p.image}" alt="" width="50" height="50" />
+                        {if isset($p.image) && $p.image}
+                        <img src="{$p.image|escape:'htmlall':'UTF-8'}" alt="" width="50" height="50" />
                         {/if}
                     </td>
 
@@ -69,35 +69,3 @@
     </table>
 </div>
 
-<div class="panel">
-    <h3><i class="icon-list"></i> {l s='Ostatnie logi synchronizacji' mod='erliintegration'}</h3>
-
-    <table class="table">
-        <thead>
-            <tr>
-                <th>{l s='Data' mod='erliintegration'}</th>
-                <th>{l s='Typ' mod='erliintegration'}</th>
-                <th>{l s='Referencja' mod='erliintegration'}</th>
-                <th>{l s='Komunikat' mod='erliintegration'}</th>
-            </tr>
-        </thead>
-        <tbody>
-        {if $logs && count($logs)}
-            {foreach from=$logs item=log}
-                <tr>
-                    <td>{$log.created_at}</td>
-                    <td>{$log.type}</td>
-                    <td>{$log.reference_id}</td>
-                    <td>{$log.message}</td>
-                </tr>
-            {/foreach}
-        {else}
-            <tr>
-                <td colspan="4">
-                    {l s='Brak logów.' mod='erliintegration'}
-                </td>
-            </tr>
-        {/if}
-        </tbody>
-    </table>
-</div>

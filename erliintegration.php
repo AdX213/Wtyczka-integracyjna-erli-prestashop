@@ -10,9 +10,10 @@ class ErliIntegration extends Module
     {
         $this->name = 'erliintegration';
         $this->tab = 'administration';
-        $this->version = '1.0.0';
+        $this->version = '1.2.2'; // ✅ spójnie z paczką
         $this->author = 'Adrian';
         $this->need_instance = 0;
+        $this->bootstrap = true;  // ✅ BO
 
         parent::__construct();
 
@@ -34,6 +35,14 @@ class ErliIntegration extends Module
             return false;
         }
 
+        // ✅ rejestracja hooków (raz, poprawnie)
+        if (
+            !$this->registerHook('actionProductSave') ||
+            !$this->registerHook('actionUpdateQuantity')
+        ) {
+            return false;
+        }
+
         Configuration::updateValue('ERLI_API_KEY', '');
         Configuration::updateValue('ERLI_CRON_TOKEN', Tools::passwdGen(32));
 
@@ -44,17 +53,13 @@ class ErliIntegration extends Module
         Configuration::updateValue('ERLI_STATE_PAID', (int) Configuration::get('PS_OS_PAYMENT'));
         Configuration::updateValue('ERLI_STATE_CANCELLED', (int) Configuration::get('PS_OS_CANCELED'));
 
-        $this->registerHook('actionProductSave');
-        $this->registerHook('actionUpdateQuantity');
-
         return true;
     }
 
     public function uninstall()
     {
-        if (!$this->removeAdminTab()) {
-            // ignorujemy
-        }
+        // sprzątanie taba (nie blokuj uninstall)
+        $this->removeAdminTab();
 
         if (!$this->uninstallSql()) {
             return false;
@@ -68,11 +73,7 @@ class ErliIntegration extends Module
         Configuration::deleteByName('ERLI_STATE_PAID');
         Configuration::deleteByName('ERLI_STATE_CANCELLED');
 
-        if (!parent::uninstall()) {
-            return false;
-        }
-
-        return true;
+        return parent::uninstall();
     }
 
     protected function installSql()
@@ -95,45 +96,87 @@ class ErliIntegration extends Module
 
         $sqlContent = file_get_contents($file);
         $sqlContent = str_replace(['PREFIX_'], [_DB_PREFIX_], $sqlContent);
+
+        // bezpieczniejsze cięcie po średnikach
         $queries = preg_split("/;\s*[\r\n]+/", $sqlContent);
 
         foreach ($queries as $query) {
             $query = trim($query);
-            if ($query) {
+            if ($query !== '') {
                 if (!Db::getInstance()->execute($query)) {
                     return false;
                 }
             }
         }
+
         return true;
     }
 
     protected function registerAdminTab()
     {
-        $idTab = (int) Tab::getIdFromClassName('AdminErliIntegration');
-        if ($idTab) {
+        // 1) Parent (sekcja ERLI)
+        $parentClass = 'AdminErli';
+        $parentId = (int) Tab::getIdFromClassName($parentClass);
+
+        if (!$parentId) {
+            $parent = new Tab();
+            $parent->active = 1;
+            $parent->class_name = $parentClass;
+            $parent->module = $this->name;
+
+            // 0 = root menu (osobna sekcja w lewym panelu)
+            $parent->id_parent = 0;
+
+            foreach (Language::getLanguages(false) as $lang) {
+                $parent->name[(int)$lang['id_lang']] = 'ERLI';
+            }
+
+            // Spróbuj wymusić "na dole"
+            $parent->position = 9999;
+
+            if (!$parent->add()) {
+                return false;
+            }
+
+            $parentId = (int) Tab::getIdFromClassName($parentClass);
+        }
+
+        // 2) Child (Twoja strona)
+        $childClass = 'AdminErliIntegration';
+        $childId = (int) Tab::getIdFromClassName($childClass);
+
+        if ($childId) {
             return true;
         }
 
         $tab = new Tab();
-        $tab->class_name = 'AdminErliIntegration';
-        $tab->module = $this->name;
-        $tab->id_parent = (int) Tab::getIdFromClassName('AdminParentModulesSf');
         $tab->active = 1;
+        $tab->class_name = $childClass;
+        $tab->module = $this->name;
+        $tab->id_parent = (int) $parentId;
 
         foreach (Language::getLanguages(false) as $lang) {
-            $tab->name[(int) $lang['id_lang']] = 'Erli';
+            $tab->name[(int)$lang['id_lang']] = 'Integracja';
         }
+
+        // też na końcu sekcji
+        $tab->position = 9999;
 
         return (bool) $tab->add();
     }
 
     protected function removeAdminTab()
     {
-        $idTab = (int) Tab::getIdFromClassName('AdminErliIntegration');
-        if ($idTab) {
-            $tab = new Tab($idTab);
-            return (bool) $tab->delete();
+        // usuń child
+        $childId = (int) Tab::getIdFromClassName('AdminErliIntegration');
+        if ($childId) {
+            (new Tab($childId))->delete();
+        }
+
+        // usuń parent
+        $parentId = (int) Tab::getIdFromClassName('AdminErli');
+        if ($parentId) {
+            (new Tab($parentId))->delete();
         }
 
         return true;
@@ -144,15 +187,15 @@ class ErliIntegration extends Module
         $output = '';
 
         if (Tools::isSubmit('submitErliIntegration')) {
-            $apiKey          = Tools::getValue('ERLI_API_KEY');
-            $cronToken       = Tools::getValue('ERLI_CRON_TOKEN');
+            $apiKey          = (string) Tools::getValue('ERLI_API_KEY');
+            $cronToken       = (string) Tools::getValue('ERLI_CRON_TOKEN');
             $defaultCarrier  = (int) Tools::getValue('ERLI_DEFAULT_CARRIER');
             $defaultOrderSt  = (int) Tools::getValue('ERLI_DEFAULT_ORDER_STATE');
             $statePending    = (int) Tools::getValue('ERLI_STATE_PENDING');
             $statePaid       = (int) Tools::getValue('ERLI_STATE_PAID');
             $stateCancelled  = (int) Tools::getValue('ERLI_STATE_CANCELLED');
 
-            Configuration::updateValue('ERLI_API_KEY', $apiKey);
+            Configuration::updateValue('ERLI_API_KEY', trim($apiKey));
             Configuration::updateValue('ERLI_CRON_TOKEN', $cronToken ?: Tools::passwdGen(32));
             Configuration::updateValue('ERLI_DEFAULT_CARRIER', $defaultCarrier);
             Configuration::updateValue('ERLI_DEFAULT_ORDER_STATE', $defaultOrderSt);
@@ -169,14 +212,14 @@ class ErliIntegration extends Module
 
         $output .= $this->renderForm();
 
-        $linkToProductsSync = $this->context->link->getAdminLink('AdminErliIntegration');
+        $linkToPanel = $this->context->link->getAdminLink('AdminErliIntegration');
 
         $output .= '
         <div class="panel">
-            <h3><i class="icon-refresh"></i> ' . $this->l('Ręczna synchronizacja produktów z Erli.pl') . '</h3>
-            <p>' . $this->l('Przejdź do panelu ręcznej synchronizacji produktów, aby wysłać wybrany produkt do Erli lub sprawdzić ostatnie logi.') . '</p>
-            <a href="' . htmlspecialchars($linkToProductsSync, ENT_QUOTES, 'UTF-8') . '" class="btn btn-primary">
-                <i class="icon-external-link"></i> ' . $this->l('Otwórz panel synchronizacji produktów') . '
+            <h3><i class="icon-refresh"></i> ' . $this->l('Panel integracji Erli.pl') . '</h3>
+            <p>' . $this->l('Przejdź do panelu integracji, aby zobaczyć dashboard, logi i narzędzia synchronizacji.') . '</p>
+            <a href="' . htmlspecialchars($linkToPanel, ENT_QUOTES, 'UTF-8') . '" class="btn btn-primary">
+                <i class="icon-external-link"></i> ' . $this->l('Otwórz panel Erli') . '
             </a>
         </div>';
 
@@ -185,10 +228,10 @@ class ErliIntegration extends Module
 
         $output .= '
         <div class="panel">
-            <h3><i class="icon-clock-o"></i> ' . $this->l('CRON – automatyczna synchronizacja zamówień') . '</h3>
-            <p>' . $this->l('Skonfiguruj zadanie CRON na serwerze, aby cyklicznie wywoływać ten URL:') . '</p>
+            <h3><i class="icon-clock-o"></i> ' . $this->l('CRON – automatyczna synchronizacja') . '</h3>
+            <p>' . $this->l('Wywołuj cyklicznie ten URL:') . '</p>
             <pre style="user-select:all;">' . htmlspecialchars($cronUrl, ENT_QUOTES, 'UTF-8') . '</pre>
-            <p>' . $this->l('Przykład (co 5 minut, cron Linux):') . '</p>
+            <p>' . $this->l('Przykład (co 5 minut, Linux cron):') . '</p>
             <pre>*/5 * * * * curl -s "' . htmlspecialchars($cronUrl, ENT_QUOTES, 'UTF-8') . '" >/dev/null 2>&1</pre>
         </div>';
 
@@ -239,7 +282,6 @@ class ErliIntegration extends Module
                         'id'    => 'id_carrier',
                         'name'  => 'name',
                     ],
-                    'desc'   => $this->l('Przewoźnik ustawiany na zamówieniach importowanych z Erli (jeśli nie ma mapowania).'),
                 ],
                 [
                     'type'   => 'select',
@@ -323,25 +365,25 @@ class ErliIntegration extends Module
     protected function testConnection()
     {
         try {
-            $apiKey = Configuration::get('ERLI_API_KEY');
-
-            if (!$apiKey) {
+            $apiKey = (string) Configuration::get('ERLI_API_KEY');
+            if ($apiKey === '') {
                 throw new Exception($this->l('Brak ustawionego API key.'));
             }
 
-            require_once __DIR__ . '/classes/Api/ErlApiClient.php';
-            $client = new ErlApiClient($apiKey);
+            // ✅ poprawna klasa/plik
+            require_once __DIR__ . '/classes/Api/ErliApiClient.php';
+            $client = new ErliApiClient($apiKey);
 
             $response = $client->get('/inbox', ['limit' => 1]);
 
-            if ($response['code'] >= 200 && $response['code'] < 300) {
+            if ((int)$response['code'] >= 200 && (int)$response['code'] < 300) {
                 return $this->displayConfirmation(
-                    $this->l('Połączenie z Erli.pl działa. Kod HTTP: ') . $response['code']
+                    $this->l('Połączenie z Erli.pl działa. Kod HTTP: ') . (int) $response['code']
                 );
             }
 
             return $this->displayError(
-                $this->l('Błąd połączenia z Erli.pl. Kod HTTP: ') . $response['code']
+                $this->l('Błąd połączenia z Erli.pl. Kod HTTP: ') . (int) $response['code']
             );
         } catch (Exception $e) {
             return $this->displayError($e->getMessage());
@@ -350,38 +392,37 @@ class ErliIntegration extends Module
 
     public function hookActionProductSave($params)
     {
-        require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Sync/ProductSync.php';
-
         if (empty($params['id_product'])) {
             return;
         }
 
-        $apiKey = Configuration::get('ERLI_API_KEY');
-        if (!$apiKey) {
+        $apiKey = (string) Configuration::get('ERLI_API_KEY');
+        if ($apiKey === '') {
             return;
         }
 
-        ProductSync::syncSingle((int) $params['id_product']);
+        require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Sync/ProductSync.php';
+
+        // ✅ nie ma syncSingle() – używamy batch pending (1 rekord) lub syncAllPending
+        $sync = new ProductSync();
+        $sync->syncAllPending(1);
     }
 
     public function hookActionUpdateQuantity($params)
     {
-        require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Sync/ProductSync.php';
-
         if (empty($params['id_product'])) {
             return;
         }
 
-        $apiKey = Configuration::get('ERLI_API_KEY');
-        if (!$apiKey) {
+        $apiKey = (string) Configuration::get('ERLI_API_KEY');
+        if ($apiKey === '') {
             return;
         }
 
-        $idProduct   = (int) $params['id_product'];
-        $idAttribute = !empty($params['id_product_attribute'])
-            ? (int) $params['id_product_attribute']
-            : null;
+        require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Sync/ProductSync.php';
 
-        ProductSync::syncSingle($idProduct, $idAttribute);
+        // To też odpalamy lekko (1 rekord). Jeśli chcesz precyzyjnie po id_product, dopiszemy syncSingle().
+        $sync = new ProductSync();
+        $sync->syncAllPending(1);
     }
 }

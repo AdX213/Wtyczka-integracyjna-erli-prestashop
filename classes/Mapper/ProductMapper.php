@@ -54,22 +54,55 @@ class ProductMapper
             $status = 'inactive';
         }
 
-        // VAT – na razie stałe 23% (do rozwinięcia)
-        $vatRate = 23;
+        // ---------------- VAT (POPRAWNIE Z PS) ----------------
+
+        // kraj domyślny sklepu
+        $idCountry = (int) Configuration::get('PS_COUNTRY_DEFAULT');
+
+        // stawki VAT przypisane do produktu
+        $taxRates = TaxRulesGroup::getAssociatedTaxRatesByIdCountry(
+            (int) $product->id_tax_rules_group,
+            $idCountry
+        );
+
+        // domyślnie 0
+        $vatRate = 0.0;
+
+        // jeśli jest więcej niż jedna stawka, bierzemy pierwszą (standard PS)
+        if (is_array($taxRates) && !empty($taxRates)) {
+            $vatRate = (float) reset($taxRates);
+        }
+
+        // ---------------- CENA BRUTTO ----------------
+
+        $priceGross = (float) Product::getPriceStatic(
+            (int) $product->id,
+            true,               // WITH TAX
+            null,
+            2,
+            null,
+            false,
+            true,
+            1,
+            false,
+            null,
+            null,
+            $context->shop->id
+        );
 
         // Waga w gramach
         $weightGrams = (float) $product->weight * 1000;
 
         $categories   = CategoryMapper::mapProductCategories($product, $idLang);
         $shippingTags = ShippingMapper::mapTagsForProduct($product, $idLang);
-
+        
         return [
             'externalId'  => (string) $product->id,
             'status'      => $status,
-            'name'        => isset($product->name[$idLang]) ? (string) $product->name[$idLang] : '',
-            'description' => isset($product->description[$idLang]) ? (string) $product->description[$idLang] : '',
-            'price'       => (float) $product->price,
-            'vat'         => $vatRate,
+            'name'        => (string) ($product->name[$idLang] ?? ''),
+            'description' => (string) ($product->description[$idLang] ?? ''),
+            'price'       => $priceGross,   // BRUTTO
+            'vat'         => $vatRate,      // VAT Z PS
             'stock'       => $stock,
             'images'      => $images,
             'packaging'   => [
@@ -77,6 +110,6 @@ class ProductMapper
                 'tags'   => $shippingTags,
             ],
             'externalCategories' => $categories,
-        ];
+      ];
     }
 }

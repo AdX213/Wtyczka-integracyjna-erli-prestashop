@@ -4,32 +4,22 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Api/ErlApiClient.php';
+require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Api/ErliApiClient.php';
 
-class ErlOrderApi
+class ErliOrderApi
 {
-    /** @var ErlApiClient */
     private $client;
 
     public function __construct()
     {
-        $apiKey = Configuration::get('ERLI_API_KEY');
-        $this->client = new ErlApiClient($apiKey);
+        $this->client = new ErliApiClient(Configuration::get('ERLI_API_KEY'));
     }
 
-    /**
-     * Pobiera inbox z Erli
-     */
     public function getInbox($limit = 100)
     {
-        return $this->client->get('/inbox', [
-            'limit' => (int) $limit,
-        ]);
+        return $this->client->get('/inbox', ['limit' => (int) $limit]);
     }
 
-    /**
-     * Oznacza wiadomości jako przetworzone
-     */
     public function ackInbox($lastMessageId)
     {
         return $this->client->post('/inbox/ack', [
@@ -37,11 +27,8 @@ class ErlOrderApi
         ]);
     }
 
-    /**
-     * Pobiera szczegóły zamówienia
-     */
     public function getOrder($orderId)
     {
-        return $this->client->get('/orders/' . urlencode($orderId));
+        return $this->client->get('/orders/' . rawurlencode($orderId));
     }
 }

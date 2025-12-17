@@ -4,30 +4,35 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Api/ErlApiClient.php';
+require_once _PS_MODULE_DIR_ . 'erliintegration/classes/Api/ErliApiClient.php';
 
-class ErlProductApi
+class ErliProductApi
 {
-    /** @var ErlApiClient */
     private $client;
 
-    public function __construct(ErlApiClient $client)
+    public function __construct()
     {
-        $this->client = $client;
+        $this->client = new ErliApiClient(Configuration::get('ERLI_API_KEY'));
     }
 
     public function createProduct($externalId, array $payload)
     {
-        return $this->client->post('/products/' . urlencode($externalId), $payload);
+        return $this->client->post('/products/' . rawurlencode($externalId), $payload);
     }
 
     public function updateProduct($externalId, array $payload)
     {
-        return $this->client->patch('/products/' . urlencode($externalId), $payload);
+        return $this->client->patch('/products/' . rawurlencode($externalId), $payload);
+    }
+
+    // alias dla StockSync
+    public function patchProduct($externalId, array $payload)
+    {
+        return $this->updateProduct($externalId, $payload);
     }
 
     public function getProduct($externalId)
     {
-        return $this->client->get('/products/' . urlencode($externalId));
+        return $this->client->get('/products/' . rawurlencode($externalId));
     }
 }
